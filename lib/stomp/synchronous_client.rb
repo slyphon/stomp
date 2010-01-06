@@ -3,9 +3,15 @@ module Stomp
   # It is (obviously) only safe to access from one thread at a time
   #
   # Every call waits to receive confirmation that the broker received the
-  # command before returning. 
+  # command before returning.
   class SynchronousClient < Client
-    
+
+    def initialize(*a)
+      super
+      @_cv = ConditionVariable.new
+      @_mutex = Mutex.new
+    end
+
     # blocks until we receive a receipt from the server
     #
     # if a block is given, will be called after the receipt is *synchronously*
@@ -15,10 +21,11 @@ module Stomp
     #
     def send(destination, message, headers={})
       a = []
+      @_mutex.synchronize do
+        super(destination, message, headers) { |r| a.unshift(r); wake_main_thread! }
 
-      super(destination, message, headers) { |rcpt| a.unshift(rcpt) }
-
-      Thread.pass while a.empty?
+        @_cv.wait(@_mutex)
+      end
 
       yield a.first if block_given?
 
@@ -54,6 +61,15 @@ module Stomp
       Thread.pass while a.empty?
       a.first
     end
+
+    private
+      def reply_callback
+        lambda { |r| wake_main_thread! }
+      end
+
+      def wake_main_thread!
+        @_mutex.synchronize { @_cv.signal }
+      end
   end
 end
 
