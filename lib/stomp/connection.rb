@@ -460,7 +460,8 @@ module Stomp
           # Using :suppress_content_length => true will suppress this behaviour
           # and ActiveMQ will interpret the message as a TextMessage.
           # For more information refer to http://juretta.com/log/2009/05/24/activemq-jms-stomp/
-          suppress_content_length = headers.delete :suppress_content_length
+
+          suppress_content_length = headers.delete(:suppress_content_length)
           headers['content-length'] = "#{body.length}" unless suppress_content_length
           
           s.puts command  
