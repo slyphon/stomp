@@ -109,13 +109,13 @@ module Stomp
             @subscriptions.each { |k,v| _transmit(s, "SUBSCRIBE", v) }
             
             @connection_attempts = 0
-          rescue
-            @failure = $!
+          rescue Exception => ex
+            @failure = ex
             s = nil
             raise unless @reliable
-            $stderr.print "connect to #{@host} failed: #{$!} will retry(##{@connection_attempts}) in #{@reconnect_delay}\n"
+            $stderr.print "connect to #{@host} failed: #{ex.inspect} will retry(##{@connection_attempts}) in #{@reconnect_delay}\n"
 
-            raise "Max number of reconnection attempts reached" if max_reconnect_attempts?
+            raise MaxConnectionAttemptsReachedError, "Max number of reconnection attempts reached" if max_reconnect_attempts?
 
             sleep(@reconnect_delay)
             

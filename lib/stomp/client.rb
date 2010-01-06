@@ -260,6 +260,7 @@ module Stomp
         new_options
       end
       
+    protected
       def start_listeners
         @listeners = {}
         @receipt_listeners = {}

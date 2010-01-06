@@ -18,6 +18,7 @@ require 'socket'
 require 'thread'
 require 'stomp/connection'
 require 'stomp/client'
+require 'stomp/synchronous_client'
 require 'stomp/message'
 
 module Stomp
