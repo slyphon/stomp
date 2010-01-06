@@ -11,6 +11,7 @@ module Stomp
     def to_s
       "<Stomp::Message headers=#{headers.inspect} body='#{body}' command='#{command}' >"
     end
+
   end
 
 end

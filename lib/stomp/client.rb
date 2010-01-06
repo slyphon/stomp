@@ -204,18 +204,19 @@ module Stomp
       @running = false
     end
 
-    private
+    def register_receipt_listener(listener=nil, &block) #:nodoc:
+      listener ||= block
 
-      def register_receipt_listener(listener)
-        id = -1
-        @id_mutex.synchronize do
-          id = @ids.to_s
-          @ids = @ids.succ
-        end
-        @receipt_listeners[id] = listener
-        id
+      id = -1
+      @id_mutex.synchronize do
+        id = @ids.to_s
+        @ids = @ids.succ
       end
-      
+      @receipt_listeners[id] = listener
+      id
+    end
+
+     private
       def default_port(ssl)
         return 61612 if ssl
         
