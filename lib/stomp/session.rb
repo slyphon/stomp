@@ -1,10 +1,9 @@
 module Stomp
-
   # This class provides a way of synchronously receiving messages off the queue.
   # It is (obviously) only safe to access from one thread at a time
   #
   # Every call waits to receive confirmation that the broker received the
-  # command before returning.
+  # command before returning. (this may become optional in the future)
   class Session
     # these headers are passed to every call made by this session
     attr_reader :default_headers
@@ -17,14 +16,21 @@ module Stomp
     # a little box we can drop things in for cross-thread communication
     Memo = Struct.new(:receipt)
 
-    def initialize(client, default_headers={})
+    def initialize(client, opts={})
       @client = client
       @cv = ConditionVariable.new
       @mutex = Mutex.new
       @last_receipt = nil
-      @default_headers = default_headers
+      @default_headers = {}
+      @subscribe_headers = {}
       @txn_count = 0
       @txn_id = nil
+
+      require 'logger'
+      @log = Logger.new('/tmp/session.log')
+      @log.level = Logger::DEBUG
+
+      parse_opts(opts)
     end
 
     # blocks until we receive a receipt from the server
@@ -36,7 +42,7 @@ module Stomp
     #
     def send(destination, message, headers={})
       sync_and_wait_for_signal do |memo|
-        client.send(destination, message, headers) do |r|
+       @client.send(destination, message, headers) do |r|
           sync_then_signal { memo.receipt = r }
         end
       end
@@ -77,8 +83,31 @@ module Stomp
       sync_call_client(:acknowledge, message, headers)
     end
 
-
     protected
+      def parse_opts(opts)
+        opts.uncamelize_and_stringfy.each do |k,v|
+          case k
+          when /^(exclusive|retroactive)$/
+            @subscribe_headers[:"activemq.#{k}"] = v
+          when /^(dispatch_async|maximum_pending_message_limit|prefetch_size|subscription_name|noLocal)$/
+            @subscribe_headers[:"activemq.#{camelize(k,false)}"] = v
+          when 'selector'
+            @subscribe_headers[k] = v
+          else
+            @default_headers[k.to_sym] = v
+          end
+        end
+      end
+      
+      # stolen from activesupport-2.2.2
+      def camelize(lower_case_and_underscored_word, first_letter_in_uppercase = true)
+        if first_letter_in_uppercase
+          lower_case_and_underscored_word.to_s.gsub(/\/(.?)/) { "::#{$1.upcase}" }.gsub(/(?:^|_)(.)/) { $1.upcase }
+        else
+          lower_case_and_underscored_word.first.downcase + camelize(lower_case_and_underscored_word)[1..-1]
+        end
+      end
+
       def txn_open?
         false|@txn_id
       end
@@ -92,15 +121,23 @@ module Stomp
       end
 
       def sync_call_client(meth, *args)
+        @log.fatal "sync_call_client called with #{meth.inspect} #{args.inspect}"
         headers = extract_headers(args)
-        headers = default_headers.merge(headers)
-        headers[:transaction] = @txn_id if txn_open?
 
-        sync_and_wait_for_signal do |memo|
-          headers['receipt'] = client.register_receipt_listener { |r| memo.receipt = r; sync_then_signal }
-          args << headers
+        defaults = (meth == :subscribe) ? @subscribe_headers : @default_headers
 
-          client.__send__(meth, *args)
+        headers = defaults.merge(headers)
+        headers[:transaction] = @txn_id if @txn_id
+
+        sync_and_wait_for_signal(headers) do |memo,hdrs|
+          cb = lambda { |r| memo.receipt = r; sync_then_signal }
+
+          hdrs['receipt'] = client.register_receipt_listener(cb)
+          args << hdrs
+
+          @log.fatal "calling client.#{meth} with #{args.inspect}"
+
+          @client.__send__(meth, *args)
         end
       end
 
@@ -108,14 +145,11 @@ module Stomp
         args.last.kind_of?(Hash) ? args.pop : {}
       end
 
-      def reply_callback
-        lambda { |r| wake_main_thread! }
-      end
-
-      def sync_and_wait_for_signal
+      def sync_and_wait_for_signal(*args)
         memo = Memo.new
         @mutex.synchronize do
-          yield memo if block_given?
+          @log.fatal "YIELDING"
+          yield(memo,*args) if block_given?
           @cv.wait(@mutex)
         end
         memo.receipt

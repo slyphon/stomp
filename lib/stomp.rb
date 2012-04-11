@@ -16,11 +16,14 @@
 require 'io/wait'
 require 'socket'
 require 'thread'
-require 'stomp/connection'
-require 'stomp/client'
-require 'stomp/synchronous_client'
-require 'stomp/message'
 
+# define the module before requiring the stuff that's going to use it
 module Stomp
 end
+
+require 'stomp/connection'
+require 'stomp/client'
+require 'stomp/session'
+require 'stomp/message'
+
 
